@@ -22,9 +22,11 @@
 #include "jelopt.h"
 #include "jelist.h"
 #include "skbuff.h"
+#include "ttcp.h"
 
 struct {
 	int verbose;
+	int timeout_ms;
 } conf;
 
 struct hdr {
@@ -344,7 +346,7 @@ int ajp_body_recv(struct ajp *ajp, int fd, size_t len)
 	ssize_t got;
 	size_t datalen;
 
-	got = read(fd, data, 2);
+	got = tread(fd, data, 2, conf.timeout_ms);
 	if(conf.verbose > 1) fprintf(stderr, "got %d\n", got);
 	datalen = data[0] << 8;
         datalen += data[1];
@@ -353,7 +355,7 @@ int ajp_body_recv(struct ajp *ajp, int fd, size_t len)
 	if(datalen > len) return -1;
 	if(conf.verbose > 1) fprintf(stderr, "datalen %d\n", datalen);
 	while(datalen) {
-		got = read(fd, buf, (datalen <= sizeof(buf))?datalen:sizeof(buf));
+		got = tread(fd, buf, (datalen <= sizeof(buf))?datalen:sizeof(buf), conf.timeout_ms);
 		if(conf.verbose > 1) fprintf(stderr, "got %d\n", got);
 		if(got > 0) {
 			buf[got] = 0;
@@ -364,7 +366,7 @@ int ajp_body_recv(struct ajp *ajp, int fd, size_t len)
 		if(got <= 0) break;
 	}
 	while(len) {
-		got = read(fd, buf, (len <= sizeof(buf))?len:sizeof(buf));
+		got = tread(fd, buf, (len <= sizeof(buf))?len:sizeof(buf), conf.timeout_ms);
 		if(conf.verbose > 1) fprintf(stderr, "got rest %d\n", got);
 		if(got > 0) {
 			len -= got;
@@ -384,7 +386,7 @@ int ajp_headers_recv(struct ajp *ajp, int fd, size_t len)
         skb = alloc_skb(8192);
 	
 	/* read data */
-	got = read(fd, skb->data, len);
+	got = tread(fd, skb->data, len, conf.timeout_ms);
 	if(conf.verbose > 1) fprintf(stderr, "got %d %u %u\n", got, skb->data[0], skb->data[1]);
 	skb_put(skb, len);
 	
@@ -435,7 +437,7 @@ int ajp_recv(struct ajp *ajp, int fd, struct timeval *t)
 	struct timeval start;
 	
 	gettimeofday(&start, NULL);
-	got = read(fd, data, 5);
+	got = tread(fd, data, 5, conf.timeout_ms);
 	timeelapsed(t, &start);
 
 	if(got != 5) {
@@ -469,7 +471,7 @@ int ajp_recv(struct ajp *ajp, int fd, struct timeval *t)
 		break;
 	case AJP13_END_RESPONSE:
 		if(conf.verbose > 1) fprintf(stderr, "end response\n");
-		got = read(fd, data, 1);
+		got = tread(fd, data, 1, conf.timeout_ms);
 		ajp->reuse = (data[0] == 1);
 		return 0;
 		break;
@@ -493,7 +495,7 @@ int ajp_pong_recv(int fd, struct timeval *t)
 	struct timeval start;
 	
 	gettimeofday(&start, NULL);
-	got = read(fd, data, 5);
+	got = tread(fd, data, 5, conf.timeout_ms);
 	timeelapsed(t, &start);
 	
 	if(got == 5) {
@@ -571,6 +573,8 @@ int main(int argc, char **argv)
 		struct jlhead *attributes;
 	} deflt;
 
+	conf.timeout_ms = 1000;
+
 	req.server_name = "localhost";
 	req.server_port = 80;
 	
@@ -604,6 +608,7 @@ int main(int argc, char **argv)
 			"    --remote_host      remote host []\n"
 			"    --protocol         protocol [HTTP/1.1]\n"
 			" -c --count N          number of requests to send\n"
+			" -T --timeout MS       timeout in milliseconds [1000]\n"
 			" -H --header NAME=VALUE\n"
 			" -a --attribute NAME=VALUE\n"
 			"                       Predefined attributes are:\n"
@@ -624,6 +629,7 @@ int main(int argc, char **argv)
 	}
 	while(jelopt_int(argv, 'p', "port", &port, &err));
 	while(jelopt_int(argv, 'c', "count", &count, &err));
+	while(jelopt_int(argv, 'T', "timeout", &conf.timeout_ms, &err));
 	while(jelopt(argv, 'r', "remote_addr", &req.remote_addr, &err));
 	while(jelopt(argv, 0, "remote_host", &req.remote_host, &err));
 	while(jelopt(argv, 0, "protocol", &req.protocol, &err));
@@ -740,7 +746,7 @@ int main(int argc, char **argv)
 		addr_linear.addr.v4.sin_port = htons(port);
 	if(addr->ai_family == AF_INET6)
 		addr_linear.addr.v6.sin6_port = htons(port);
-	if(connect(fd, addr->ai_addr, addr->ai_addrlen)) {
+	if(tconnect(fd, addr->ai_addr, addr->ai_addrlen, conf.timeout_ms)) {
 		fprintf(stderr, "connect failed\n");
 		exit(1);
 	}
