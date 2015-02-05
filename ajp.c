@@ -348,6 +348,7 @@ int ajp_body_recv(struct ajp *ajp, int fd, size_t len)
 
 	got = tread(fd, data, 2, conf.timeout_ms);
 	if(conf.verbose > 1) fprintf(stderr, "got %d\n", got);
+	if(got != 2) return -1;
 	datalen = data[0] << 8;
         datalen += data[1];
 	len -= 2;
@@ -363,7 +364,7 @@ int ajp_body_recv(struct ajp *ajp, int fd, size_t len)
 			len -= got;
 			datalen -= got;
 		}
-		if(got <= 0) break;
+		if(got <= 0) return -1;
 	}
 	while(len) {
 		got = tread(fd, buf, (len <= sizeof(buf))?len:sizeof(buf), conf.timeout_ms);
@@ -371,7 +372,7 @@ int ajp_body_recv(struct ajp *ajp, int fd, size_t len)
 		if(got > 0) {
 			len -= got;
 		}
-		if(got <= 0) break;
+		if(got <= 0) return -1;
 	}
 	return 0;
 }
@@ -386,9 +387,16 @@ int ajp_headers_recv(struct ajp *ajp, int fd, size_t len)
         skb = alloc_skb(8192);
 	
 	/* read data */
-	got = tread(fd, skb->data, len, conf.timeout_ms);
-	if(conf.verbose > 1) fprintf(stderr, "got %d %u %u\n", got, skb->data[0], skb->data[1]);
-	skb_put(skb, len);
+	while(len) {
+		if(skb_tailroom(skb) < len) return -1;
+		got = tread(fd, skb->tail, len, conf.timeout_ms);
+		if(conf.verbose > 1) fprintf(stderr, "got %d %u %u\n", got, skb->data[0], skb->data[1]);
+		if(got > 0) {
+			skb_put(skb, len);
+			len -= got;
+		}
+		if(got <= 0) return -1;
+	}
 	
 	/* status code */
 	ajp->code = ajp_skb_pullint(skb);
@@ -439,7 +447,6 @@ int ajp_recv(struct ajp *ajp, int fd, struct timeval *t)
 	gettimeofday(&start, NULL);
 	got = tread(fd, data, 5, conf.timeout_ms);
 	timeelapsed(t, &start);
-
 	if(got != 5) {
 		printf("wrong count %d\n", got);
 		return -1;
@@ -463,15 +470,18 @@ int ajp_recv(struct ajp *ajp, int fd, struct timeval *t)
 	switch(type) {
 	case AJP13_SEND_HEADERS:
 		if(conf.verbose > 1) fprintf(stderr, "send headers\n");
-		ajp_headers_recv(ajp, fd, len);
+		if(ajp_headers_recv(ajp, fd, len))
+			return -1;
 		break;
 	case AJP13_SEND_BODY_CHUNK:
 		if(conf.verbose > 1) fprintf(stderr, "send body chunk\n");
-		ajp_body_recv(ajp, fd, len);
+		if(ajp_body_recv(ajp, fd, len))
+			return -1;
 		break;
 	case AJP13_END_RESPONSE:
 		if(conf.verbose > 1) fprintf(stderr, "end response\n");
 		got = tread(fd, data, 1, conf.timeout_ms);
+		if(got < 0) return -1;
 		ajp->reuse = (data[0] == 1);
 		return 0;
 		break;
