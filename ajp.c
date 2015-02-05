@@ -27,6 +27,7 @@
 struct {
 	int verbose;
 	int timeout_ms;
+	int quiet;
 } conf;
 
 struct hdr {
@@ -359,8 +360,7 @@ int ajp_body_recv(struct ajp *ajp, int fd, size_t len)
 		got = tread(fd, buf, (datalen <= sizeof(buf))?datalen:sizeof(buf), conf.timeout_ms);
 		if(conf.verbose > 1) fprintf(stderr, "got %d\n", got);
 		if(got > 0) {
-			buf[got] = 0;
-			printf("%s", buf);
+			if(!conf.quiet) write(1, buf, got);
 			len -= got;
 			datalen -= got;
 		}
@@ -442,27 +442,29 @@ int ajp_recv(struct ajp *ajp, int fd, struct timeval *t)
 	ssize_t got;
 	size_t len;
 	int type;
+	int rc = 0;
 	struct timeval start;
 	
 	gettimeofday(&start, NULL);
 	got = tread(fd, data, 5, conf.timeout_ms);
-	timeelapsed(t, &start);
 	if(got != 5) {
 		printf("wrong count %d\n", got);
-		return -1;
+		rc = -1; goto out;
 	}
 
 	if( !((data[0] == 'A') &&
 	      (data[1] == 'B')) ) {
 		if(conf.verbose) fprintf(stderr, "ajp: response: wrong magic: '%c' '%c'\n", data[0], data[1] );
-		return -1;
+		rc = -1; goto out;
 	}
 	
 	len = data[2] << 8;
 	len += data[3];
 	len--;
 	if(conf.verbose > 1) fprintf(stderr, "len = %d\n", len);
-	if(len > 8192) return -1;
+	if(len > 8192) {
+		rc = -1; goto out;
+	}
 	
 	type = data[4];
 	ajp->type = type;
@@ -470,32 +472,38 @@ int ajp_recv(struct ajp *ajp, int fd, struct timeval *t)
 	switch(type) {
 	case AJP13_SEND_HEADERS:
 		if(conf.verbose > 1) fprintf(stderr, "send headers\n");
-		if(ajp_headers_recv(ajp, fd, len))
-			return -1;
+		if(ajp_headers_recv(ajp, fd, len)) {
+			rc = -1; goto out;
+		}
 		break;
 	case AJP13_SEND_BODY_CHUNK:
 		if(conf.verbose > 1) fprintf(stderr, "send body chunk\n");
-		if(ajp_body_recv(ajp, fd, len))
-			return -1;
+		if(ajp_body_recv(ajp, fd, len)) {
+			rc = -1; goto out;
+		}
 		break;
 	case AJP13_END_RESPONSE:
 		if(conf.verbose > 1) fprintf(stderr, "end response\n");
 		got = tread(fd, data, 1, conf.timeout_ms);
-		if(got < 0) return -1;
+		if(got < 0) {
+			rc = -1; goto out;
+		}
 		ajp->reuse = (data[0] == 1);
-		return 0;
+		goto out;
 		break;
 	case AJP13_GET_BODY_CHUNK:
 		if(conf.verbose > 1) fprintf(stderr, "get body chunk\n");
-		return 0;
+		goto out;
 		break;
 	default:
 		if(conf.verbose > 1) fprintf(stderr, "default\n");
-		return 0;
+		goto out;
 		break;
 	}
 
-	return 0;
+out:
+	timeelapsed(t, &start);
+	return rc;
 }
 
 int ajp_pong_recv(int fd, struct timeval *t)
@@ -626,6 +634,7 @@ int main(int argc, char **argv)
 			"                       auth_type, query_string, jvm_route,\n"
 			"                       ssl_cert, ssl_cipher, ssl_session\n"
 			" -S --ssl              Set is_ssl flag\n"
+			" -q --quiet            Do not write response body to stdout\n"
 			"\n"
 			" CMD:\n"
 			" PING\n"
@@ -676,6 +685,7 @@ int main(int argc, char **argv)
 	}
 	while(jelopt(argv, 'S', "ssl", 0, &err)) req.is_ssl = 1;
 	while(jelopt(argv, 'v', "verbose", 0, &err)) conf.verbose++;
+	while(jelopt(argv, 'q', "quiet", 0, &err)) conf.quiet = 1;
 
 	argc = jelopt_final(argv, &err);
 	if(err) {
@@ -787,11 +797,11 @@ int main(int argc, char **argv)
 					fprintf(stderr, "get failed\n");
 					exit(1);
 				}
+				fprintf(stderr, "time=%lu.%03lu ms\n",
+					elapsed.tv_sec*1000 + elapsed.tv_usec/1000, elapsed.tv_usec%1000);
 				if(ajp.type == AJP13_END_RESPONSE) break;
 			}
 			ajp_destroy(&ajp);
-			fprintf(stderr, "time=%lu.%03lu ms\n",
-				elapsed.tv_sec*1000 + elapsed.tv_usec/1000, elapsed.tv_usec%1000);
 			if(count) count--;
 			if(count == 0) break;
 			sleep(1);
