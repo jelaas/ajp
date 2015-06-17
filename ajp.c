@@ -265,12 +265,19 @@ int ajp_get(int fd, const struct reqinfo *req)
 	
 	*(skb_put(skb, 1)) = AJP13_FORWARD_REQUEST;
 	*(skb_put(skb, 1)) = GET;
+	if(conf.verbose > 2) fprintf(stderr, "protocol: %s\n", req->protocol);
 	ajp_skb_putstr(skb, req->protocol);
+	if(conf.verbose > 2) fprintf(stderr, "URI: %s\n", req->URI);
 	ajp_skb_putstr(skb, req->URI);
+	if(conf.verbose > 2) fprintf(stderr, "remote_addr: %s\n", req->remote_addr);
 	ajp_skb_putstr(skb, req->remote_addr); /* client IP */
+	if(conf.verbose > 2) fprintf(stderr, "remote_host: %s\n", req->remote_host);
 	ajp_skb_putstr(skb, req->remote_host); /* client HOSTNAME */
+	if(conf.verbose > 2) fprintf(stderr, "server_name: %s\n", req->server_name);
 	ajp_skb_putstr(skb, req->server_name);
+	if(conf.verbose > 2) fprintf(stderr, "server_port: %d\n", req->server_port);
 	ajp_skb_putint(skb, req->server_port);
+	if(conf.verbose > 2) fprintf(stderr, "is_ssl: %d\n", req->is_ssl);
 	*(skb_put(skb, 1)) = req->is_ssl; /* is_ssl */
 	
 	/* headers */
@@ -732,6 +739,7 @@ int main(int argc, char **argv)
 			} else {
 				if(strncmp("https://", req.URI, 8)==0) {
 					req.URI += 8;
+					req.is_ssl = 1;
 				}
 			}
 		}
@@ -788,19 +796,27 @@ int main(int argc, char **argv)
 	}
 
 	if(!strcmp(cmd, "GET")) {
+		struct timeval start;
+
 		while(1) {
 			struct ajp ajp;
 			memset(&ajp, 0, sizeof(ajp));
+			gettimeofday(&start, NULL);
+			
 			ajp_get(fd, &req);
 			while(1) {
 				if(ajp_recv(&ajp, fd, &elapsed)) {
 					fprintf(stderr, "get failed\n");
 					exit(1);
 				}
-				fprintf(stderr, "time=%lu.%03lu ms\n",
+				fprintf(stderr, "recv_time=%lu.%03lu ms\n",
 					elapsed.tv_sec*1000 + elapsed.tv_usec/1000, elapsed.tv_usec%1000);
 				if(ajp.type == AJP13_END_RESPONSE) break;
 			}
+			timeelapsed(&elapsed, &start);
+			fprintf(stderr, "time=%lu.%03lu ms\n",
+				elapsed.tv_sec*1000 + elapsed.tv_usec/1000, elapsed.tv_usec%1000);
+
 			ajp_destroy(&ajp);
 			if(count) count--;
 			if(count == 0) break;
