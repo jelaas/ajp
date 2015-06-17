@@ -2,7 +2,7 @@
  * File: ajp.c
  * Implements: ajp client
  *
- * Copyright: Jens Låås, Uppsala University, 2014
+ * Copyright: Jens Låås, Uppsala University, 2014-2015
  * Copyright license: According to GPL, see file COPYING in this directory.
  *
  */
@@ -18,6 +18,8 @@
 #include <netdb.h>
 #include <sys/time.h>
 #include <ctype.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include "jelopt.h"
 #include "jelist.h"
@@ -28,6 +30,7 @@ struct {
 	int verbose;
 	int timeout_ms;
 	int quiet;
+	int outputfd;
 } conf;
 
 struct hdr {
@@ -367,7 +370,9 @@ int ajp_body_recv(struct ajp *ajp, int fd, size_t len)
 		got = tread(fd, buf, (datalen <= sizeof(buf))?datalen:sizeof(buf), conf.timeout_ms);
 		if(conf.verbose > 1) fprintf(stderr, "got %d\n", got);
 		if(got > 0) {
-			if(!conf.quiet) write(1, buf, got);
+			if(!conf.quiet) {
+				write(conf.outputfd, buf, got);
+			}
 			len -= got;
 			datalen -= got;
 		}
@@ -590,6 +595,7 @@ int main(int argc, char **argv)
 	char *host = "localhost";
 	char *cmd = (void*)0;
 	char *attr, *hdrarg, *server;
+	char *outputstr = (void*)0;
 	struct reqinfo req;
 	struct timeval elapsed;
 	struct addrinfo_linear addr_linear;
@@ -599,6 +605,7 @@ int main(int argc, char **argv)
 	} deflt;
 
 	conf.timeout_ms = 1000;
+	conf.outputfd = 1;
 
 	req.server_name = "localhost";
 	req.server_port = 80;
@@ -633,6 +640,7 @@ int main(int argc, char **argv)
 			"    --remote_host      remote host []\n"
 			"    --protocol         protocol [HTTP/1.1]\n"
 			" -c --count N          number of requests to send\n"
+			" -O (FN|-)             send response output to file or stdout\n"
 			" -T --timeout MS       timeout in milliseconds [1000]\n"
 			" -H --header NAME=VALUE\n"
 			" -a --attribute NAME=VALUE\n"
@@ -657,6 +665,7 @@ int main(int argc, char **argv)
 	while(jelopt_int(argv, 'c', "count", &count, &err));
 	while(jelopt_int(argv, 'T', "timeout", &conf.timeout_ms, &err));
 	while(jelopt(argv, 'r', "remote_addr", &req.remote_addr, &err));
+	while(jelopt(argv, 'O', "output", &outputstr, &err));
 	while(jelopt(argv, 0, "remote_host", &req.remote_host, &err));
 	while(jelopt(argv, 0, "protocol", &req.protocol, &err));
 	while(jelopt(argv, 'H', "header", &hdrarg, &err)) {
@@ -700,6 +709,16 @@ int main(int argc, char **argv)
 		exit(2);
 	}
 
+	if(outputstr) {
+		if(strcmp(outputstr, "-")) {
+			conf.outputfd = open(outputstr, O_WRONLY|O_CREAT, 0644);
+			if(conf.outputfd == -1) {
+				fprintf(stderr, "Failed to open output file %s\n", outputstr);
+				exit(2);
+			}
+		}
+	}
+	
 	if(req.attributes->len == 0) {
 		req.attributes = deflt.attributes;
 	}
