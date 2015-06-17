@@ -31,6 +31,7 @@ struct {
 	int timeout_ms;
 	int quiet;
 	int outputfd;
+	int server_response;
 } conf;
 
 struct hdr {
@@ -417,6 +418,7 @@ int ajp_headers_recv(struct ajp *ajp, int fd, size_t len)
 	if(ajp_skb_pullstring(skb, &ajp->msg) == -1)
 		return -1;
 	if(conf.verbose) fprintf(stderr, "ajp: status message = '%s'\n", ajp->msg);
+	if(conf.server_response) printf("Status: %d %s\n", ajp->code, ajp->msg);
 	
 	ajp->num_headers = ajp_skb_pullint(skb);
 	ajp->headers = jl_new();
@@ -430,18 +432,21 @@ int ajp_headers_recv(struct ajp *ajp, int fd, size_t len)
 			if(conf.verbose > 1) fprintf(stderr, "compressed header\n");
 			skb_pull(skb, 1);
 			if(conf.verbose) fprintf(stderr, "ajp: %s: ", http_header_resp[*skb->data]);
+			if(conf.server_response) printf("%s: ", http_header_resp[*skb->data]);
 			hdr->name = strdup(http_header_resp[*skb->data]);
 			skb_pull(skb, 1);
 		} else {
 			if(ajp_skb_pullstring(skb, &hdr->name)==-1)
 				return -1;
 			if(conf.verbose) fprintf(stderr, "ajp: %s: ", hdr->name);
+			if(conf.server_response) printf("%s: ", hdr->name);
 		}
 		if(ajp_skb_pullstring(skb, &hdr->value)==-1) {
 			if(conf.verbose) fprintf(stderr, "ajp: malformed message: header value overflow\n");
 			return -1;
 		}
 		if(conf.verbose) fprintf(stderr, "%s\n", hdr->value);
+		if(conf.server_response) printf("%s\n", hdr->value);
 		jl_append(ajp->headers, hdr);
 	}
 	
@@ -648,7 +653,8 @@ int main(int argc, char **argv)
 			"                       context, servlet_path, remote_user,\n"
 			"                       auth_type, query_string, jvm_route,\n"
 			"                       ssl_cert, ssl_cipher, ssl_session\n"
-			" -S --ssl              Set is_ssl flag\n"
+			" --ssl                 Set is_ssl flag\n"
+			" -S --server-response  Print server response headers\n "
 			" -q --quiet            Do not write response body to stdout\n"
 			"\n"
 			" CMD:\n"
@@ -699,7 +705,8 @@ int main(int argc, char **argv)
 			req.server_name = server;
 		}
 	}
-	while(jelopt(argv, 'S', "ssl", 0, &err)) req.is_ssl = 1;
+	while(jelopt(argv, 0, "ssl", 0, &err)) req.is_ssl = 1;
+	while(jelopt(argv, 'S', "server-response", 0, &err)) conf.server_response = 1;
 	while(jelopt(argv, 'v', "verbose", 0, &err)) conf.verbose++;
 	while(jelopt(argv, 'q', "quiet", 0, &err)) conf.quiet = 1;
 
