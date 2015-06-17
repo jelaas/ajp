@@ -654,7 +654,7 @@ int main(int argc, char **argv)
 			"                       auth_type, query_string, jvm_route,\n"
 			"                       ssl_cert, ssl_cipher, ssl_session\n"
 			" --ssl                 Set is_ssl flag\n"
-			" -S --server-response  Print server response headers\n "
+			" -S --server-response  Print server response headers\n"
 			" -q --quiet            Do not write response body to stdout\n"
 			"\n"
 			" CMD:\n"
