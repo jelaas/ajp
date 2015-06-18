@@ -27,9 +27,9 @@ int tconnect(int sockfd, const struct sockaddr *addr,
 	struct timespec timeout, timeleft, timenow;
 	int rc;
 	int flags;
-	uint64_t ms;
+	int64_t ms;
 	
-	if(timeout_ms)
+	if(timeout_ms >= 0)
 	{
 		flags = fcntl(sockfd, F_GETFL);
 		fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
@@ -55,8 +55,13 @@ try_connect:
 		rc = -1;
 		goto out;
 	}
-	ntimediff(&timeleft, &timenow, &timeout);
-	ms = (timeleft.tv_sec*1000) + (timeleft.tv_nsec/1000000) ;
+	if((timenow.tv_sec > timeout.tv_sec) ||
+	   ((timenow.tv_sec == timeout.tv_sec) && timenow.tv_nsec >= timeout.tv_nsec))
+		ms = 0;
+	else {
+		ntimediff(&timeleft, &timenow, &timeout);
+		ms = (timeleft.tv_sec*1000) + (timeleft.tv_nsec/1000000) ;
+	}
 	rc = connect(sockfd, addr, addrlen);
 	
 	if( (rc < 0) && (errno != EISCONN) )
@@ -70,8 +75,13 @@ try_connect:
 					rc = -1;
 					goto out;
 				}
-				ntimediff(&timeleft, &timenow, &timeout);
-				ms = (timeleft.tv_sec*1000) + (timeleft.tv_nsec/1000000) ;
+				if((timenow.tv_sec > timeout.tv_sec) ||
+				   ((timenow.tv_sec == timeout.tv_sec) && timenow.tv_nsec >= timeout.tv_nsec))
+					ms = 0;
+				else {
+					ntimediff(&timeleft, &timenow, &timeout);
+					ms = (timeleft.tv_sec*1000) + (timeleft.tv_nsec/1000000) ;
+				}
 				rc = poll(&ufd, 1, ms);
 				if( ((rc == -1) && (errno != EINTR)) ||
 				    ((rc > 0) && (ufd.revents & POLLERR)) )
@@ -81,7 +91,6 @@ try_connect:
 				}
 			}
 			
-			/* calculate time left */
 			goto try_connect;
 		}
 		
@@ -106,9 +115,9 @@ ssize_t tread(int fd, void *buf, size_t count, long timeout_ms)
 	int flags;
 	struct pollfd ufd;
 	struct timespec timeout, timeleft, timenow;
-	uint64_t ms;
+	int64_t ms;
 	
-	if(timeout_ms) {
+	if(timeout_ms >= 0) {
 		flags = fcntl(fd, F_GETFL);
 		fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 	}
@@ -132,8 +141,13 @@ try_read:
 		rc = -1;
 		goto out;
 	}
-	ntimediff(&timeleft, &timenow, &timeout);
-	ms = (timeleft.tv_sec*1000) + (timeleft.tv_nsec/1000000) ;
+	if((timenow.tv_sec > timeout.tv_sec) ||
+	   ((timenow.tv_sec == timeout.tv_sec) && timenow.tv_nsec >= timeout.tv_nsec))
+		ms = 0;
+	else {
+		ntimediff(&timeleft, &timenow, &timeout);
+		ms = (timeleft.tv_sec*1000) + (timeleft.tv_nsec/1000000);
+	}
 	rc = read(fd, buf, count);
 
 	if(rc < 0) {
@@ -144,8 +158,13 @@ try_read:
 					rc = -1;
 					goto out;
 				}
-				ntimediff(&timeleft, &timenow, &timeout);
-				ms = (timeleft.tv_sec*1000) + (timeleft.tv_nsec/1000000) ;
+				if((timenow.tv_sec > timeout.tv_sec) ||
+				   ((timenow.tv_sec == timeout.tv_sec) && timenow.tv_nsec >= timeout.tv_nsec))
+					ms = 0;
+				else {
+					ntimediff(&timeleft, &timenow, &timeout);
+					ms = (timeleft.tv_sec*1000) + (timeleft.tv_nsec/1000000);
+				}
 				rc = poll(&ufd, 1, ms);
 				if( ((rc == -1) && (errno != EINTR)) ||
 				    ((rc > 0) && (ufd.revents & POLLERR)) )
