@@ -20,6 +20,7 @@
 #include <ctype.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #include "jelopt.h"
 #include "jelist.h"
@@ -465,7 +466,7 @@ int ajp_recv(struct ajp *ajp, int fd, struct timeval *t)
 	gettimeofday(&start, NULL);
 	got = tread(fd, data, 5, conf.timeout_ms);
 	if(got != 5) {
-		printf("wrong count %d\n", got);
+		printf("wrong count %d: %s\n", got, strerror(errno));
 		rc = -1; goto out;
 	}
 
