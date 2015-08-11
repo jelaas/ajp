@@ -363,8 +363,9 @@ int ajp_body_recv(struct ajp *ajp, int fd, size_t len)
 	char buf[256];
 	ssize_t got;
 	size_t datalen;
+	char *errstr;
 
-	got = tread(fd, data, 2, conf.timeout_ms);
+	got = tread(fd, data, 2, conf.timeout_ms, &errstr);
 	if(conf.verbose > 1) fprintf(stderr, "got %d\n", got);
 	if(got != 2) return -1;
 	datalen = data[0] << 8;
@@ -374,7 +375,7 @@ int ajp_body_recv(struct ajp *ajp, int fd, size_t len)
 	if(datalen > len) return -1;
 	if(conf.verbose > 1) fprintf(stderr, "datalen %d\n", datalen);
 	while(datalen) {
-		got = tread(fd, buf, (datalen <= sizeof(buf))?datalen:sizeof(buf), conf.timeout_ms);
+		got = tread(fd, buf, (datalen <= sizeof(buf))?datalen:sizeof(buf), conf.timeout_ms, &errstr);
 		if(conf.verbose > 1) fprintf(stderr, "got %d\n", got);
 		if(got > 0) {
 			if(!conf.quiet) {
@@ -386,7 +387,7 @@ int ajp_body_recv(struct ajp *ajp, int fd, size_t len)
 		if(got <= 0) return -1;
 	}
 	while(len) {
-		got = tread(fd, buf, (len <= sizeof(buf))?len:sizeof(buf), conf.timeout_ms);
+		got = tread(fd, buf, (len <= sizeof(buf))?len:sizeof(buf), conf.timeout_ms, &errstr);
 		if(conf.verbose > 1) fprintf(stderr, "got rest %d\n", got);
 		if(got > 0) {
 			len -= got;
@@ -402,13 +403,14 @@ int ajp_headers_recv(struct ajp *ajp, int fd, size_t len)
 	int i;
 	ssize_t got;
 	struct hdr *hdr;
+	char *errstr;
 	
         skb = alloc_skb(8192);
 	
 	/* read data */
 	while(len) {
 		if(skb_tailroom(skb) < len) return -1;
-		got = tread(fd, skb->tail, len, conf.timeout_ms);
+		got = tread(fd, skb->tail, len, conf.timeout_ms, &errstr);
 		if(conf.verbose > 1) fprintf(stderr, "got %d %u %u\n", got, skb->data[0], skb->data[1]);
 		if(got > 0) {
 			skb_put(skb, len);
@@ -467,9 +469,10 @@ int ajp_recv(struct ajp *ajp, int fd, struct timeval *t)
 	int type;
 	int rc = 0;
 	struct timeval start;
+	char *errstr;
 	
 	gettimeofday(&start, NULL);
-	got = tread(fd, data, 5, conf.timeout_ms);
+	got = tread(fd, data, 5, conf.timeout_ms, &errstr);
 	if(got != 5) {
 		printf("wrong count %d: %s\n", got, strerror(errno));
 		rc = -1; goto out;
@@ -507,7 +510,7 @@ int ajp_recv(struct ajp *ajp, int fd, struct timeval *t)
 		break;
 	case AJP13_END_RESPONSE:
 		if(conf.verbose > 1) fprintf(stderr, "end response\n");
-		got = tread(fd, data, 1, conf.timeout_ms);
+		got = tread(fd, data, 1, conf.timeout_ms, &errstr);
 		if(got < 0) {
 			rc = -1; goto out;
 		}
@@ -535,10 +538,11 @@ int ajp_pong_recv(int fd, struct timeval *t)
 	ssize_t got;
 	struct timeval start;
 	int e;
+	char *errstr;
 	
 	gettimeofday(&start, NULL);
 	errno = 0;
-	got = tread(fd, data, 5, conf.timeout_ms);
+	got = tread(fd, data, 5, conf.timeout_ms, &errstr);
 	e = errno;
 	timeelapsed(t, &start);
 	
@@ -552,7 +556,7 @@ int ajp_pong_recv(int fd, struct timeval *t)
 		if(conf.verbose > 1) fprintf(stderr, "ajp: ajp_pong_recv failed: pong content mismatch %02x,%02x,%02x,%02x,%02x\n",
 					     data[0], data[1], data[2], data[3], data[4]);
 	} else {
-		if(conf.verbose > 1) fprintf(stderr, "ajp: ajp_pong_recv failed: got=%d: %s\n", got, strerror(e));
+		if(conf.verbose > 1) fprintf(stderr, "ajp: ajp_pong_recv failed: got=%d: %s [%s]\n", got, strerror(e), errstr);
 	}
 	
 	return 1;

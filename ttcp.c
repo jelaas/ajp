@@ -109,7 +109,7 @@ out:
 	return rc;
 }
 
-ssize_t tread(int fd, void *buf, size_t count, long timeout_ms)
+ssize_t tread(int fd, void *buf, size_t count, long timeout_ms, char **errstr)
 {
 	ssize_t rc;
 	int flags;
@@ -127,6 +127,7 @@ ssize_t tread(int fd, void *buf, size_t count, long timeout_ms)
 	
 	/* when do we timeout? */
 	if(clock_gettime(CLOCK_MONOTONIC, &timeout)) {
+		if(errstr) *errstr = "clock_gettime failed";
 		rc = -1;
 		goto out;
 	}
@@ -138,6 +139,7 @@ ssize_t tread(int fd, void *buf, size_t count, long timeout_ms)
 
 try_read:
 	if(clock_gettime(CLOCK_MONOTONIC, &timenow)) {
+		if(errstr) *errstr = "clock_gettime failed";
 		rc = -1;
 		goto out;
 	}
@@ -151,10 +153,14 @@ try_read:
 	rc = read(fd, buf, count);
 
 	if(rc < 0) {
-		if(ms <= 0) return -1;
+		if(ms <= 0) {
+			if(errstr) *errstr = "timed out";
+			goto out;
+		}
 		if( (errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR)) {
 			if(errno != EINTR) {
 				if(clock_gettime(CLOCK_MONOTONIC, &timenow)) {
+					if(errstr) *errstr = "clock_gettime failed";
 					rc = -1;
 					goto out;
 				}
@@ -169,6 +175,7 @@ try_read:
 				if( ((rc == -1) && (errno != EINTR)) ||
 				    ((rc > 0) && (ufd.revents & POLLERR)) )
 				{
+					if(errstr) *errstr = "POLLERR";
 					rc = -1;
 					goto out;
 				}
@@ -179,6 +186,7 @@ try_read:
 		}
 		
 		/* catch all other errors */
+		if(errstr) *errstr = "other error";
 		rc = -1;
 		goto out;
 	}
