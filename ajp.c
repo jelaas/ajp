@@ -534,9 +534,12 @@ int ajp_pong_recv(int fd, struct timeval *t)
 	uint8_t data[5];
 	ssize_t got;
 	struct timeval start;
+	int e;
 	
 	gettimeofday(&start, NULL);
+	errno = 0;
 	got = tread(fd, data, 5, conf.timeout_ms);
+	e = errno;
 	timeelapsed(t, &start);
 	
 	if(got == 5) {
@@ -549,7 +552,7 @@ int ajp_pong_recv(int fd, struct timeval *t)
 		if(conf.verbose > 1) fprintf(stderr, "ajp: ajp_pong_recv failed: pong content mismatch %02x,%02x,%02x,%02x,%02x\n",
 					     data[0], data[1], data[2], data[3], data[4]);
 	} else {
-		if(conf.verbose > 1) fprintf(stderr, "ajp: ajp_pong_recv failed: got=%d\n", got);
+		if(conf.verbose > 1) fprintf(stderr, "ajp: ajp_pong_recv failed: got=%d: %s\n", got, strerror(e));
 	}
 	
 	return 1;
@@ -612,6 +615,7 @@ int main(int argc, char **argv)
 	char *attr, *hdrarg, *server;
 	char *outputstr = (void*)0;
 	struct reqinfo req;
+	struct timeval start;
 	struct timeval elapsed;
 	struct addrinfo_linear addr_linear;
 	struct addrinfo *addr = (struct addrinfo *)&addr_linear;
@@ -810,13 +814,21 @@ int main(int argc, char **argv)
 		addr_linear.addr.v4.sin_port = htons(port);
 	if(addr->ai_family == AF_INET6)
 		addr_linear.addr.v6.sin6_port = htons(port);
+	
+	gettimeofday(&start, NULL);
 	if(tconnect(fd, addr->ai_addr, addr->ai_addrlen, conf.timeout_ms)) {
 		fprintf(stderr, "connect failed\n");
 		exit(1);
 	}
-
+	
 	if(!strcmp(cmd, "PING")) {
+		int firstpass = 1;
+		
 		while(1) {
+			if(!firstpass) {
+				gettimeofday(&start, NULL);
+				firstpass = 0;
+			}
 			if(ajp_ping(fd)) {
 				fprintf(stderr, "ping failed (send)\n");
 				exit(1);				
@@ -825,6 +837,9 @@ int main(int argc, char **argv)
 				fprintf(stderr, "ping failed (recv)\n");
 				exit(1);
 			}
+			if(conf.verbose) fprintf(stderr, "recv_time=%lu.%03lu ms\n",
+						 elapsed.tv_sec*1000 + elapsed.tv_usec/1000, elapsed.tv_usec%1000);
+			timeelapsed(&elapsed, &start);
 			printf("time=%lu.%03lu ms\n",
 			       elapsed.tv_sec*1000 + elapsed.tv_usec/1000, elapsed.tv_usec%1000);
 			if(count == 1) break;
@@ -835,12 +850,15 @@ int main(int argc, char **argv)
 	}
 
 	if(!strcmp(cmd, "GET")) {
-		struct timeval start;
-
 		while(1) {
 			struct ajp ajp;
+			int firstpass = 1;
+			
 			memset(&ajp, 0, sizeof(ajp));
-			gettimeofday(&start, NULL);
+			if(!firstpass) {
+				gettimeofday(&start, NULL);
+				firstpass = 0;
+			}
 			
 			ajp_get(fd, &req);
 			while(1) {
