@@ -250,12 +250,17 @@ int ajp_skb_pullstring(struct sk_buff *skb, char **msg)
 int ajp_ping(int fd)
 {
 	uint8_t data[5];
+	ssize_t rc;
+	
 	data[0] = 0x12;
 	data[1] = 0x34;
 	data[2] = 0;
 	data[3] = 1;
 	data[4] = AJP13_PING;
-	write(fd, data, 5);
+	if((rc=write(fd, data, 5)) != 5) {
+		if(conf.verbose > 1) fprintf(stderr, "ajp: ajp_ping failed: rc=%d\n", rc);
+		return -1;
+	}
 	return 0;
 }
 
@@ -541,8 +546,12 @@ int ajp_pong_recv(int fd, struct timeval *t)
 		    (data[3] == 1) &&
 		    (data[4] == AJP13_PONG))
 			return 0;
-
+		if(conf.verbose > 1) fprintf(stderr, "ajp: ajp_pong_recv failed: pong content mismatch %02x,%02x,%02x,%02x,%02x\n",
+					     data[0], data[1], data[2], data[3], data[4]);
+	} else {
+		if(conf.verbose > 1) fprintf(stderr, "ajp: ajp_pong_recv failed: got=%d\n", got);
 	}
+	
 	return 1;
 }
 
@@ -808,9 +817,12 @@ int main(int argc, char **argv)
 
 	if(!strcmp(cmd, "PING")) {
 		while(1) {
-			ajp_ping(fd);
+			if(ajp_ping(fd)) {
+				fprintf(stderr, "ping failed (send)\n");
+				exit(1);				
+			}
 			if(ajp_pong_recv(fd, &elapsed)) {
-				fprintf(stderr, "ping failed\n");
+				fprintf(stderr, "ping failed (recv)\n");
 				exit(1);
 			}
 			printf("time=%lu.%03lu ms\n",
