@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <time.h>
@@ -5,17 +6,16 @@
 #include <errno.h>
 #include "ttcp.h"
 
-static void ntimediff(struct timespec *diff,
-		      struct timespec *start,
-		      struct timespec *stop)
+static void ntimediff(struct timespec *diff, /* left */
+		      const struct timespec *start, /* now */
+		      const struct timespec *stop) /* timeout */
 {
 	diff->tv_sec = stop->tv_sec - start->tv_sec;
 	diff->tv_nsec = stop->tv_nsec - start->tv_nsec;
 	if(diff->tv_nsec < 0)
 	{
 		diff->tv_sec--;
-		start->tv_nsec -= stop->tv_nsec;
-		diff->tv_nsec = 1000000000-start->tv_nsec;
+		diff->tv_nsec += 1000000000;
 	}
 }
 
@@ -27,7 +27,7 @@ int tconnect(int sockfd, const struct sockaddr *addr,
 	struct timespec timeout, timeleft, timenow;
 	int rc;
 	int flags;
-	int64_t ms;
+	int64_t ms, tmp;
 	
 	if(timeout_ms >= 0)
 	{
@@ -43,12 +43,14 @@ int tconnect(int sockfd, const struct sockaddr *addr,
 		rc = -1;
 		goto out;
 	}
-	timeout.tv_nsec += (timeout_ms * (uint64_t) 1000000);
-	while(timeout.tv_nsec >= (uint64_t) 1000000000)
+	tmp = timeout.tv_nsec;
+	tmp += ((uint64_t) timeout_ms * (uint64_t) 1000000);
+	while(tmp >= (uint64_t) 1000000000)
 	{
 		timeout.tv_sec++;
-		timeout.tv_nsec -= (uint64_t) 1000000000;
+		tmp -= (uint64_t) 1000000000;
 	}
+	timeout.tv_nsec = tmp;
 	
 try_connect:
 	if(clock_gettime(CLOCK_MONOTONIC, &timenow)) {
@@ -115,7 +117,7 @@ ssize_t tread(int fd, void *buf, size_t count, long timeout_ms, char **errstr)
 	int flags;
 	struct pollfd ufd;
 	struct timespec timeout, timeleft, timenow;
-	int64_t ms;
+	int64_t ms, tmp;
 	
 	if(timeout_ms >= 0) {
 		flags = fcntl(fd, F_GETFL);
@@ -131,11 +133,13 @@ ssize_t tread(int fd, void *buf, size_t count, long timeout_ms, char **errstr)
 		rc = -1;
 		goto out;
 	}
-	timeout.tv_nsec += (timeout_ms * (uint64_t) 1000000);
-	while(timeout.tv_nsec >= (uint64_t) 1000000000) {
+	tmp = timeout.tv_nsec;
+	tmp += ((uint64_t) timeout_ms * (uint64_t) 1000000);
+	while(tmp >= (uint64_t) 1000000000) {
 		timeout.tv_sec++;
-		timeout.tv_nsec -= (uint64_t) 1000000000;
+		tmp -= (uint64_t) 1000000000;
 	}
+	timeout.tv_nsec = tmp;
 
 try_read:
 	if(clock_gettime(CLOCK_MONOTONIC, &timenow)) {
@@ -144,9 +148,9 @@ try_read:
 		goto out;
 	}
 	if((timenow.tv_sec > timeout.tv_sec) ||
-	   ((timenow.tv_sec == timeout.tv_sec) && timenow.tv_nsec >= timeout.tv_nsec))
+	   ((timenow.tv_sec == timeout.tv_sec) && timenow.tv_nsec >= timeout.tv_nsec)) {
 		ms = 0;
-	else {
+	} else {
 		ntimediff(&timeleft, &timenow, &timeout);
 		ms = (timeleft.tv_sec*1000) + (timeleft.tv_nsec/1000000);
 	}
@@ -154,7 +158,11 @@ try_read:
 
 	if(rc < 0) {
 		if(ms <= 0) {
-			if(errstr) *errstr = "timed out";
+			static char buf[64];
+			if(errstr) {
+				sprintf(buf, "timed out [ms=%lld]", ms);
+				*errstr = buf;
+			}
 			goto out;
 		}
 		if( (errno == EAGAIN) || (errno == EWOULDBLOCK) || (errno == EINTR)) {
@@ -165,9 +173,9 @@ try_read:
 					goto out;
 				}
 				if((timenow.tv_sec > timeout.tv_sec) ||
-				   ((timenow.tv_sec == timeout.tv_sec) && timenow.tv_nsec >= timeout.tv_nsec))
+				   ((timenow.tv_sec == timeout.tv_sec) && timenow.tv_nsec >= timeout.tv_nsec)) {
 					ms = 0;
-				else {
+				} else {
 					ntimediff(&timeleft, &timenow, &timeout);
 					ms = (timeleft.tv_sec*1000) + (timeleft.tv_nsec/1000000);
 				}
