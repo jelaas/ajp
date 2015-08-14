@@ -831,6 +831,7 @@ int main(int argc, char **argv)
 		while(1) {
 			if(!firstpass) {
 				gettimeofday(&start, NULL);
+			} else {
 				firstpass = 0;
 			}
 			if(ajp_ping(fd)) {
@@ -861,6 +862,7 @@ int main(int argc, char **argv)
 			memset(&ajp, 0, sizeof(ajp));
 			if(!firstpass) {
 				gettimeofday(&start, NULL);
+			} else {
 				firstpass = 0;
 			}
 			
