@@ -6,4 +6,4 @@ ajp:	ajp.o jelopt.o skbuff.o jelist.o ttcp.o
 clean:	
 	rm -f *.o ajp
 rpm:	ajp
-	bar -c --license=GPLv2+ --name ajp ajp-1.3-1.rpm --prefix=/usr/bin --fuser=root --fgroup=root --version=1.3 --release=1 ajp
+	bar -c --license=GPLv2+ --name ajp ajp-1.4-1.rpm --prefix=/usr/bin --fuser=root --fgroup=root --version=1.4 --release=1 ajp

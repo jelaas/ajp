@@ -190,7 +190,8 @@ char *http_header_resp[12] = { "", "Content-Type", "Content-Language", "Content-
 			       "Status", "WWW-Authenticate" };
 
 char *ajp13_attributes[] = { "", "context", "servlet_path", "remote_user", "auth_type", "query_string",
-			     "jvm_route", "ssl_cert", "ssl_cipher", "ssl_session", "req_attribute" };
+			     "jvm_route", "ssl_cert", "ssl_cipher", "ssl_session", "req_attribute",
+                             "ssl_key_size", "secret", "stored_method"};
 #define AJP13_ATTRIBUTE_TERMINATOR 0xFF
 
 /*
@@ -318,7 +319,7 @@ int ajp_get(int fd, const struct reqinfo *req)
 		int i, nr;
 		if(conf.verbose > 1) fprintf(stderr, "req attribute: %s=%s ", attr->name, attr->value);
 		nr=0;
-		for(i=1;i<=10;i++) {
+		for(i=1;i<=13;i++) {
 			if(strcasecmp(ajp13_attributes[i], attr->name)) {
 				nr = i;
 				break;
@@ -671,6 +672,7 @@ int main(int argc, char **argv)
 			"                       context, servlet_path, remote_user,\n"
 			"                       auth_type, query_string, jvm_route,\n"
 			"                       ssl_cert, ssl_cipher, ssl_session\n"
+			"                       ssl_key_size, secret, stored_method\n"
 			" --ssl                 Set is_ssl flag\n"
 			" -S --server-response  Print server response headers\n"
 			" -q --quiet            Do not write response body to stdout\n"
